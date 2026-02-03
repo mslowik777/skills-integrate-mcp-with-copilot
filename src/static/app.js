@@ -3,6 +3,123 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const signupContainer = document.getElementById("signup-container");
+  
+  // Login UI elements
+  const userIcon = document.getElementById("user-icon");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const closeBtn = document.querySelector(".close");
+  const loginMessage = document.getElementById("login-message");
+  
+  // Authentication state
+  let isAdmin = false;
+  let authToken = null;
+
+  // Load auth state from localStorage
+  function loadAuthState() {
+    const stored = localStorage.getItem("authToken");
+    if (stored) {
+      authToken = stored;
+      isAdmin = true;
+      updateUI();
+    }
+  }
+
+  // Update UI based on auth state
+  function updateUI() {
+    if (isAdmin) {
+      userIcon.textContent = "🔐";
+      userIcon.title = "Logout";
+      signupContainer.classList.remove("hidden");
+      userIcon.innerHTML = '🔐 <span style="font-size: 0.8em;">Logout</span>';
+    } else {
+      userIcon.textContent = "👤";
+      userIcon.title = "Login";
+      signupContainer.classList.add("hidden");
+    }
+  }
+
+  // Login modal handlers
+  userIcon.addEventListener("click", () => {
+    if (isAdmin) {
+      // Logout
+      isAdmin = false;
+      authToken = null;
+      localStorage.removeItem("authToken");
+      updateUI();
+      fetchActivities();
+      loginMessage.classList.add("hidden");
+    } else {
+      // Show login modal
+      loginModal.classList.remove("hidden");
+    }
+  });
+
+  closeBtn.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginMessage.classList.add("hidden");
+  });
+
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.classList.add("hidden");
+      loginMessage.classList.add("hidden");
+    }
+  });
+
+  // Handle login form submission
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/login?username=" + encodeURIComponent(username) + "&password=" + encodeURIComponent(password), {
+        method: "POST"
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        authToken = result.token;
+        isAdmin = true;
+        localStorage.setItem("authToken", authToken);
+        
+        loginMessage.textContent = result.message;
+        loginMessage.className = "success";
+        loginMessage.classList.remove("hidden");
+        
+        setTimeout(() => {
+          loginModal.classList.add("hidden");
+          loginMessage.classList.add("hidden");
+          updateUI();
+          fetchActivities();
+        }, 1500);
+        
+        loginForm.reset();
+      } else {
+        loginMessage.textContent = result.detail || "Login failed";
+        loginMessage.className = "error";
+        loginMessage.classList.remove("hidden");
+      }
+    } catch (error) {
+      loginMessage.textContent = "Login error: " + error.message;
+      loginMessage.className = "error";
+      loginMessage.classList.remove("hidden");
+      console.error("Error:", error);
+    }
+  });
+
+  // Get auth header for API requests
+  function getAuthHeader() {
+    if (authToken) {
+      return {
+        "Authorization": `Bearer ${authToken}`
+      };
+    }
+    return {};
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -30,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${isAdmin ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>` : ""}</li>`
                   )
                   .join("")}
               </ul>
@@ -45,6 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="participants-container">
             ${participantsHTML}
           </div>
+          ${isAdmin ? `<button class="register-btn" data-activity="${name}">Register Student</button>` : ""}
         `;
 
         activitiesList.appendChild(activityCard);
@@ -59,6 +177,14 @@ document.addEventListener("DOMContentLoaded", () => {
       // Add event listeners to delete buttons
       document.querySelectorAll(".delete-btn").forEach((button) => {
         button.addEventListener("click", handleUnregister);
+      });
+
+      // Add event listeners to register buttons
+      document.querySelectorAll(".register-btn").forEach((button) => {
+        button.addEventListener("click", (e) => {
+          activitySelect.value = e.target.getAttribute("data-activity");
+          document.getElementById("email").focus();
+        });
       });
     } catch (error) {
       activitiesList.innerHTML =
@@ -80,6 +206,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: getAuthHeader()
         }
       );
 
@@ -117,6 +244,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
+    if (!isAdmin) {
+      messageDiv.textContent = "You must be logged in as a teacher to register students.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      return;
+    }
+
     try {
       const response = await fetch(
         `/activities/${encodeURIComponent(
@@ -124,6 +258,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: getAuthHeader()
         }
       );
 
@@ -156,5 +291,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  loadAuthState();
   fetchActivities();
 });
